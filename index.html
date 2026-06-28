@@ -691,18 +691,20 @@ function saveMealEdit(){
 
 /* ─── PHOTO UPLOAD → INVENTORY ─── */
 async function processPhotos(){
-  const f=document.getElementById('fridge-photo').files[0];
-  const p=document.getElementById('pantry-photo').files[0];
+  const files=Array.from(document.getElementById('all-photos').files||[]);
   const notes=document.getElementById('photo-notes').value;
-  if(!f&&!p){showToast('Please upload at least one photo.');return;}
+  if(!files.length){showToast('Please select at least one photo.');return;}
+  if(files.length>5){showToast('Please select up to 5 photos at a time.');return;}
   closeModal('upload-modal');
-  showLoading('Reading your fridge and pantry...');
+  showLoading(`Reading ${files.length} photo${files.length>1?'s':''}...`);
   try{
     const content=[];
-    if(f){const b=await toBase64(f);content.push({type:'image',source:{type:'base64',media_type:f.type,data:b}});}
-    if(p){const b=await toBase64(p);content.push({type:'image',source:{type:'base64',media_type:p.type,data:b}});}
-    content.push({type:'text',text:`You are a kitchen inventory assistant for a vegetarian Indian family. Analyse these fridge/pantry photos and return ONLY a JSON array — no markdown, no backticks, no preamble. Each item: {"name":"ingredient name","category":"Vegetables|Fruits|Dairy|Protein|Grains|Condiments|Other","freshness":"urgent|soon|good|pantry","qty":"rough estimate"}. urgent=use today/tomorrow, soon=this week, good=fresh 1-2 weeks, pantry=shelf-stable. User notes: ${notes||'none'}.`});
-    const data=await callClaude(content);
+    for(const f of files){
+      const b=await toBase64(f);
+      content.push({type:'image',source:{type:'base64',media_type:f.type,data:b}});
+    }
+    content.push({type:'text',text:`You are a kitchen inventory assistant for a vegetarian Indian family. Analyse all ${files.length} fridge/pantry photo(s) together and return ONLY a JSON array — no markdown, no backticks, no preamble. Each item: {"name":"ingredient name","category":"Vegetables|Fruits|Dairy|Protein|Grains|Condiments|Other","freshness":"urgent|soon|good|pantry","qty":"rough estimate"}. urgent=use today/tomorrow, soon=this week, good=fresh 1-2 weeks, pantry=shelf-stable. Deduplicate across photos — if the same ingredient appears in multiple photos, list it once with a combined quantity estimate. User notes: ${notes||'none'}.`});
+    const data=await callClaude(content, 2000);
     const text=data.content.map(c=>c.text||'').join('');
     inventory=JSON.parse(text.replace(/```json|```/g,'').trim());
     hideLoading();
@@ -936,7 +938,7 @@ Return ONLY JSON array (no markdown): [{"name":"dish name","description":"1-line
 async function callClaude(content, maxTokens=2000){
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':'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','anthropic-version':'2023-06-01'},,
+    headers:{'Content-Type':'application/json','x-api-key':'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','anthropic-version':'2023-06-01'},
     body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,messages:[{role:'user',content}]})
   });
   return resp.json();
@@ -955,9 +957,32 @@ function showToast(msg){const t=document.getElementById('toast');t.textContent=m
 function toBase64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Read failed'));r.readAsDataURL(file);});}
 
 // Init
-renderMealPlan();
-renderKids();
-renderHistory();
+document.addEventListener('DOMContentLoaded',function(){
+  renderMealPlan();
+  renderKids();
+  renderHistory();
+
+  const allPhotos=document.getElementById('all-photos');
+  if(allPhotos){
+    allPhotos.addEventListener('change',function(){
+      const preview=document.getElementById('photo-preview');
+      preview.innerHTML='';
+      Array.from(this.files).slice(0,5).forEach(f=>{
+        const url=URL.createObjectURL(f);
+        const img=document.createElement('img');
+        img.src=url;
+        img.style.cssText='width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--border);';
+        preview.appendChild(img);
+      });
+      if(this.files.length>5){
+        const note=document.createElement('div');
+        note.style.cssText='font-size:12px;color:#A32D2D;align-self:center;';
+        note.textContent='Max 5 photos — only first 5 will be used.';
+        preview.appendChild(note);
+      }
+    });
+  }
+});
 </script>
 </body>
 </html>
